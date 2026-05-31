@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@300;400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Poppins", system-ui, -apple-system, sans-serif;
+  --font-title: "Lilita One", sans-serif;
+  --font-slogan: "Lilita One", sans-serif;
+  
+  --color-primary: #E60000;      /* Rojo vibrante de fast food y brasas */
+  --color-secondary: #FFCC00;    /* Amarillo intenso para ofertas, botones e insignias */
+  --color-dark: #1A1A1A;         /* Texto oscuro de alta legibilidad por defecto */
+  --color-light: #FAFAFA;        /* Fondo claro blanco humo de la carta */
+  
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
+  --glass-bg: rgba(255, 255, 255, 0.95);
+  --glass-border: rgba(0, 0, 0, 0.05);
+}
+
+body {
+  background-color: var(--color-light);
+  color: var(--color-dark);
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-sans);
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 25s linear infinite;
+  display: flex;
+  width: max-content;
+}
+
+/* Custom scrollbar hide */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Wave decoration for sections */
+@keyframes wave {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(2deg); }
+}
+
+.wave-icon {
+  animation: wave 3s ease-in-out infinite;
+  display: inline-block;
+}
+
+/* Category header underline animation */
+.category-underline {
+  position: relative;
+}
+
+.category-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 50px;
+  height: 4px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  border-radius: 2px;
+}
+
+/* Estilo para los textos tipo Nunito en descripciones */
+.font-description {
+  font-family: 'Nunito', sans-serif;
+}
+
+/* Brillo para elementos en el tema claro */
+.fire-glow {
+  box-shadow: 0 4px 20px 0 rgba(230, 0, 0, 0.08);
+}
