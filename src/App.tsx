@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Plus, Minus, ChevronRight, X, Trash2, Utensils, Facebook, MapPin, Loader2, Gift, Star, Sparkles, Home, MessageSquare } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, ChevronRight, X, Trash2, Utensils, Facebook, MapPin, Loader2, Gift, Star, Sparkles, Home, MessageSquare, Check, Compass } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchSheetData, submitSheetData, SheetDish, SheetCategory } from './services/googleSheets';
 import { STATIC_CATEGORIES, STATIC_DISHES } from './data/menu';
@@ -12,10 +12,23 @@ const RESTAURANTE_SLOGAN = "Cada visita es una celebración de sabor";
 const WHATSAPP_NUMBER = "51997070929"; // Número de WhatsApp de Astoria
 const FACEBOOK_URL = "";
 const MAPS_URL = "https://maps.google.com/?q=Astoria+Pollos+Brass";
-const LOGO_FOOTER_PATH = "/logo.jpeg"; // Ruta del logo en public/
-const LOGO_HEADER_PATH = "/logo.jpeg"; // Ruta del logo en cabecera
+const LOGO_FOOTER_PATH = "/logo.png"; // Ruta del logo en public/
+const LOGO_HEADER_PATH = "/logo.png"; // Ruta del logo en cabecera
 const MARQUEE_TEXT = "🔥 EL AUTÉNTICO SABOR A LA BRASA • POLLOS, COMBOS Y SALCHIPAPAS • ¡HAZ TU PEDIDO YA! 🍗🍟 ";
 const COPY_CUMPLEANOS = "¡Celebra tu día con el mejor pollo a la brasa! 🍗 Regístrate aquí y recibe una porción de papas extra de regalo. 🎁";
+
+// Mapa de imágenes locales para platos en Puerto Maldonado
+const LOCAL_IMAGE_MAP: Record<string, string> = {
+  "1/8 Pollo a la brasa": "/octavo pollo.png",
+  "1/8 a la brasa + Pepsi": "/octavo pollo.png",
+  "1/4 de Pollo a la brasa": "/cuarto de pollo.png",
+  "1/4 a la brasa + Pepsi": "/cuarto de pollo.png",
+  "1/2 Pollo a la brasa": "/medio pollo.png",
+  "1/2 pollo a la brasa + Pepsi": "/medio pollo.png",
+  "1 Pollo entero": "/1 pollo.png",
+  "1 Pollo Oferta": "/1 pollo.png",
+  "1 Pollo Fresh": "/1 pollo.png"
+};
 // ==========================================
 
 interface Dish {
@@ -67,6 +80,20 @@ export default function App() {
     comentario: ''
   });
 
+  // States for Delivery Form
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [deliveryData, setDeliveryData] = useState({
+    nombre: '',
+    sector: '',
+    direccion: '',
+    referencia: '',
+    lat: null as number | null,
+    lng: null as number | null,
+    isLocating: false,
+    locationSuccess: false,
+    locationError: null as string | null
+  });
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -90,7 +117,7 @@ export default function App() {
               nombre: d['nombre del plato'],
               descripcion: d.descripción,
               precio: d.precio,
-              imagen: d['URL de imagen'] || null
+              imagen: d['URL de imagen'] || LOCAL_IMAGE_MAP[d['nombre del plato']] || null
             }))
         }));
 
@@ -111,7 +138,7 @@ export default function App() {
               nombre: d['nombre del plato'],
               descripcion: d.descripción,
               precio: d.precio,
-              imagen: d['URL de imagen'] || null
+              imagen: d['URL de imagen'] || LOCAL_IMAGE_MAP[d['nombre del plato']] || null
             }))
         }));
         
@@ -169,6 +196,19 @@ export default function App() {
     const total = calculateTotal();
     let message = `*🔥 ¡Hola Astoria Pollos Brass! Deseo realizar un pedido:*\n`;
     message += `_Cada visita es una celebración de sabor_\n\n`;
+
+    message += `*👤 DATOS DE ENTREGA:*\n`;
+    message += `• *Nombre:* ${deliveryData.nombre}\n`;
+    message += `• *Sector/Barrio:* ${deliveryData.sector}\n`;
+    message += `• *Dirección:* ${deliveryData.direccion}\n`;
+    if (deliveryData.referencia) {
+      message += `• *Referencia:* ${deliveryData.referencia}\n`;
+    }
+    if (deliveryData.lat && deliveryData.lng) {
+      message += `• *Ubicación GPS:* https://maps.google.com/?q=${deliveryData.lat},${deliveryData.lng}\n`;
+    }
+    message += `\n`;
+
     message += `*🛒 DETALLE DE LA COMPRA:*\n`;
     
     cart.forEach(item => {
@@ -180,6 +220,63 @@ export default function App() {
     
     const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+  };
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      setDeliveryData(prev => ({
+        ...prev,
+        locationError: 'Tu navegador no soporta geolocalización.'
+      }));
+      return;
+    }
+
+    setDeliveryData(prev => ({
+      ...prev,
+      isLocating: true,
+      locationError: null,
+      locationSuccess: false
+    }));
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDeliveryData(prev => ({
+          ...prev,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          isLocating: false,
+          locationSuccess: true,
+          locationError: null
+        }));
+      },
+      (error) => {
+        let msg = 'No se pudo obtener la ubicación GPS.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Permiso GPS denegado. Ingresa tu dirección manualmente.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'Señal GPS no disponible actualmente.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'Tiempo agotado al obtener el GPS.';
+        }
+        setDeliveryData(prev => ({
+          ...prev,
+          isLocating: false,
+          locationSuccess: false,
+          locationError: msg
+        }));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  };
+
+  const handleDeliverySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setShowDeliveryModal(false);
+    sendToWhatsApp();
   };
 
   const scrollToCategory = (catId: string) => {
@@ -318,13 +415,18 @@ export default function App() {
         </motion.button>
       </div>
 
-      {/* BANNER PROMOCIONAL PERSONALIZADO (CSS GRADIENT & SHIMMER) */}
+      {/* BANNER PROMOCIONAL PERSONALIZADO (IMAGEN DEL BANNER) */}
       <div className="px-5 pt-4 pb-3">
-        <div className="relative w-full rounded-[2.5rem] overflow-hidden shadow-md aspect-[2/1] bg-gradient-to-br from-primary/5 via-secondary/10 to-transparent border border-gray-100 flex flex-col items-center justify-center p-6 text-center shadow-sm">
-          <div className="absolute inset-0 shimmer opacity-15"></div>
-          <Sparkles size={28} className="text-secondary mb-2 animate-bounce" />
-          <p className="font-title text-2xl text-primary mb-1">¡EL AUTÉNTICO SABOR A LA BRASA!</p>
-          <p className="text-[10px] text-dark/50 font-description uppercase tracking-wider font-bold">Acá va tu Banner Promocional / Flyer 🍟</p>
+        <div className="w-full rounded-[2rem] overflow-hidden shadow-md border border-gray-100/50">
+          <img 
+            src="/banner.png" 
+            alt="Banner Promocional" 
+            className="w-full h-auto block"
+            onError={(e) => {
+              const wrapper = (e.target as HTMLElement).closest('.px-5');
+              if (wrapper) (wrapper as HTMLElement).style.display = 'none';
+            }}
+          />
         </div>
       </div>
 
@@ -367,10 +469,21 @@ export default function App() {
                   whileHover={{ y: -5 }}
                   className="bg-white rounded-[2.2rem] overflow-hidden flex flex-col shadow-sm border border-gray-100 hover:border-primary/20 hover:shadow-lg hover:shadow-primary/5 transition-all duration-200"
                 >
-                  {/* PLACEHOLDER DE IMAGEN PREMIUM GRIS */}
-                  <div className="aspect-square flex flex-col items-center justify-center relative overflow-hidden bg-gray-50 border-b border-gray-100 p-4 text-center">
-                    <Utensils className="text-gray-300 mb-2 animate-pulse" size={24} />
-                    <span className="text-gray-400 text-[9px] uppercase tracking-wider font-black font-description">Acá va la imagen</span>
+                  {/* IMAGEN DEL PLATO O PLACEHOLDER */}
+                  <div className="aspect-square relative overflow-hidden bg-gray-50 border-b border-gray-100 flex items-center justify-center">
+                    {dish.imagen ? (
+                      <img 
+                        src={dish.imagen} 
+                        alt={dish.nombre}
+                        className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                        onClick={() => setSelectedImage(dish.imagen)}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-4 text-center">
+                        <Utensils className="text-gray-300 mb-2" size={24} />
+                        <span className="text-gray-400 text-[9px] uppercase tracking-wider font-black font-description">Acá va la imagen</span>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="p-4.5 flex flex-col flex-1">
@@ -646,7 +759,10 @@ export default function App() {
               </div>
 
               <button
-                onClick={sendToWhatsApp}
+                onClick={() => {
+                  setShowSummary(false);
+                  setShowDeliveryModal(true);
+                }}
                 className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white py-4 rounded-2.5xl flex items-center justify-center gap-2 shadow-xl shadow-green-500/10 font-bold text-xs uppercase tracking-wider hover:scale-[1.01] transition-all duration-200"
               >
                 Enviar Pedido a WhatsApp
@@ -744,7 +860,7 @@ export default function App() {
                   </div>
                   <div>
                     <label className="text-[9px] font-black text-dark/40 uppercase ml-1">Distrito</label>
-                    <input required type="text" value={birthdayData.distrito} onChange={e => setBirthdayData({...birthdayData, distrito: e.target.value})} className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors" placeholder="Ej. Miraflores" />
+                    <input required type="text" value={birthdayData.distrito} onChange={e => setBirthdayData({...birthdayData, distrito: e.target.value})} className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors" placeholder="Ej. La Joya" />
                   </div>
                   <div>
                     <label className="text-[9px] font-black text-dark/40 uppercase ml-1">Correo Electrónico (Opcional)</label>
@@ -846,6 +962,169 @@ export default function App() {
                   </button>
                 </form>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FORMULARIO DIRECCIÓN DE ENTREGA */}
+      <AnimatePresence>
+        {showDeliveryModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowDeliveryModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white text-dark w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-gray-100"
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setShowDeliveryModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors"
+              >
+                <X size={16} className="text-dark/40" />
+              </button>
+
+              <div className="flex flex-col items-center text-center mb-5 mt-2">
+                <div className="w-14 h-14 bg-gradient-to-br from-primary to-orange-500 rounded-3xl flex items-center justify-center mb-3 shadow-lg shadow-primary/20">
+                  <MapPin size={26} className="text-white animate-pulse" />
+                </div>
+                <h2 className="font-title text-2xl text-dark leading-none mb-1">Datos de Entrega</h2>
+                <p className="text-[10px] font-description text-dark/50 px-4 leading-normal mt-1">
+                  Ingresa los detalles para que llevemos tu pedido calientito y a la dirección exacta en Puerto Maldonado.
+                </p>
+              </div>
+
+              <form onSubmit={handleDeliverySubmit} className="space-y-3">
+                <div>
+                  <label className="text-[9px] font-black text-dark/40 uppercase ml-1">¿Quién recibe? (Nombre)</label>
+                  <input
+                    required
+                    type="text"
+                    value={deliveryData.nombre}
+                    onChange={e => setDeliveryData({...deliveryData, nombre: e.target.value})}
+                    className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors"
+                    placeholder="Ej. Juan Pérez"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-black text-dark/40 uppercase ml-1">Sector / Barrio</label>
+                  <select
+                    required
+                    value={deliveryData.sector}
+                    onChange={e => setDeliveryData({...deliveryData, sector: e.target.value})}
+                    className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors"
+                  >
+                    <option value="">Selecciona tu sector</option>
+                    <option value="Centro / Cercado">Centro / Cercado</option>
+                    <option value="La Joya">La Joya</option>
+                    <option value="El Triunfo">El Triunfo (Las Piedras)</option>
+                    <option value="Pueblo Viejo">Pueblo Viejo</option>
+                    <option value="Bellavista">Bellavista</option>
+                    <option value="Los Olivos">Los Olivos</option>
+                    <option value="Alto Tambopata">Alto Tambopata</option>
+                    <option value="Chorrillos">Chorrillos</option>
+                    <option value="Rompeolas">Rompeolas</option>
+                    <option value="Fonavi">Fonavi</option>
+                    <option value="Faustino Maldonado">Faustino Maldonado</option>
+                    <option value="Bello Horizonte">Bello Horizonte</option>
+                    <option value="Otro (Especificar en dirección)">Otro (Especificar en dirección)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-black text-dark/40 uppercase ml-1">Dirección Exacta</label>
+                  <input
+                    required
+                    type="text"
+                    value={deliveryData.direccion}
+                    onChange={e => setDeliveryData({...deliveryData, direccion: e.target.value})}
+                    className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors"
+                    placeholder="Ej. Jr. Lambayeque 450, dpto 3"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-black text-dark/40 uppercase ml-1">Referencia de Entrega</label>
+                  <input
+                    required
+                    type="text"
+                    value={deliveryData.referencia}
+                    onChange={e => setDeliveryData({...deliveryData, referencia: e.target.value})}
+                    className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors"
+                    placeholder="Ej. Portón negro frente al parque Grau"
+                  />
+                </div>
+
+                {/* SECCIÓN GEOLOCALIZACIÓN GPS (OPCIONAL) */}
+                <div className="pt-2">
+                  {deliveryData.locationSuccess ? (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-green-700 text-[11px] font-bold">
+                        <Check size={16} className="text-green-600 shrink-0" />
+                        <span>📍 GPS Vinculado con éxito</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGetLocation}
+                        className="text-[10px] text-green-700 hover:text-green-800 underline font-semibold transition-colors"
+                      >
+                        Actualizar
+                      </button>
+                    </div>
+                  ) : deliveryData.locationError ? (
+                    <div className="space-y-1.5">
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-[10px] font-description leading-snug">
+                        ⚠️ {deliveryData.locationError}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGetLocation}
+                        className="w-full bg-gray-50 hover:bg-gray-100 text-dark/80 text-xs py-2 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-1.5 font-bold"
+                      >
+                        <Compass size={14} className="animate-pulse" />
+                        Intentar vincular GPS otra vez
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={deliveryData.isLocating}
+                      onClick={handleGetLocation}
+                      className="w-full bg-gray-50 hover:bg-gray-100 text-dark/80 text-xs py-2.5 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-1.5 font-bold disabled:opacity-70"
+                    >
+                      {deliveryData.isLocating ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin text-primary" />
+                          Obteniendo coordenadas GPS...
+                        </>
+                      ) : (
+                        <>
+                          <Compass size={14} className="text-primary" />
+                          Vincular mi GPS (Opcional)
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <p className="text-[8px] text-dark/40 font-description text-center mt-1">
+                    Compartir tu GPS ayuda al motorizado a llegar sin llamadas ni demoras.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-md shadow-green-500/20 mt-4 flex justify-center items-center gap-2 transition-all animate-pulse hover:animate-none"
+                >
+                  Confirmar y Enviar a WhatsApp 🍗
+                </button>
+              </form>
             </motion.div>
           </motion.div>
         )}
