@@ -48,7 +48,14 @@ interface CartItem {
   nombre: string;
   precio: string;
   cantidad: number;
+  opcion?: string;
 }
+
+const normalizePrecio = (precioVal: any): string => {
+  if (!precioVal) return '0';
+  const matched = String(precioVal).match(/[\d.]+/g);
+  return matched ? matched.join('') : '0';
+};
 
 export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -87,12 +94,26 @@ export default function App() {
     sector: '',
     direccion: '',
     referencia: '',
+    metodoPago: '',
     lat: null as number | null,
     lng: null as number | null,
     isLocating: false,
     locationSuccess: false,
     locationError: null as string | null
   });
+
+  // States for Options Selector Modal
+  const [optionsModal, setOptionsModal] = useState<{
+    dish: Dish;
+    showRice: boolean;
+    showDrink: boolean;
+    showCremas: boolean;
+    selectedRice: string;
+    selectedDrink: string;
+    selectedCremas: string[];
+    drinkOptions: string[];
+    drinkTitle: string;
+  } | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -116,8 +137,8 @@ export default function App() {
             .map(d => ({
               nombre: d['nombre del plato'],
               descripcion: d.descripción,
-              precio: d.precio,
-              imagen: d['URL de imagen'] || LOCAL_IMAGE_MAP[d['nombre del plato']] || null
+              precio: normalizePrecio(d['precio del plato'] || (d as any).precio),
+              imagen: d['imagen URL'] || (d as any)['URL de imagen'] || LOCAL_IMAGE_MAP[d['nombre del plato']] || null
             }))
         }));
 
@@ -137,8 +158,8 @@ export default function App() {
             .map(d => ({
               nombre: d['nombre del plato'],
               descripcion: d.descripción,
-              precio: d.precio,
-              imagen: d['URL de imagen'] || LOCAL_IMAGE_MAP[d['nombre del plato']] || null
+              precio: normalizePrecio((d as any).precio || (d as any)['precio del plato']),
+              imagen: (d as any)['URL de imagen'] || (d as any)['imagen URL'] || LOCAL_IMAGE_MAP[d['nombre del plato']] || null
             }))
         }));
         
@@ -156,25 +177,84 @@ export default function App() {
 
   const cartCount = useMemo(() => cart.reduce((acc, item) => acc + item.cantidad, 0), [cart]);
 
-  const addToCart = (dish: Dish) => {
+  const getDishModalConfig = (dishName: string, categoryName: string) => {
+    const nameLower = dishName.toLowerCase();
+    const catLower = categoryName.toLowerCase();
+
+    // Check if category is a food category (not Bebidas Heladas, not Complementos)
+    const isFoodCategory = catLower.includes('brasa') || catLower.includes('combo') || catLower.includes('especial');
+    
+    // Check if it's a dish that has the rice option (Salchipapa and Salchipolleros)
+    const showRice = nameLower.includes('salchipapa') || nameLower.includes('salchipollero');
+    
+    // Check if it's a dish that has a drink option
+    let showDrink = false;
+    let drinkOptions: string[] = [];
+    let drinkTitle = '';
+
+    if (nameLower.includes('refresco natural') || nameLower.includes('pollo fresh')) {
+      showDrink = true;
+      drinkOptions = ['Maíz morado', 'Maracuyá', 'Copoazú'];
+      drinkTitle = 'Elige el sabor de tu refresco';
+    } else if (nameLower.includes('pollo oferta')) {
+      showDrink = true;
+      drinkOptions = ['Coca-Cola', 'Inca Kola'];
+      drinkTitle = 'Elige tu bebida';
+    }
+
+    // Cremas show for all food dishes
+    const showCremas = isFoodCategory;
+
+    if (showRice || showDrink || showCremas) {
+      return {
+        showRice,
+        showDrink,
+        showCremas,
+        drinkOptions,
+        drinkTitle
+      };
+    }
+    return null;
+  };
+
+  const addToCart = (dish: Dish, option?: string) => {
     setCart(prev => {
-      const existing = prev.find(i => i.nombre === dish.nombre && i.precio === dish.precio);
+      const existing = prev.find(i => i.nombre === dish.nombre && i.precio === dish.precio && i.opcion === option);
       if (existing) {
         return prev.map(i =>
-          (i.nombre === dish.nombre && i.precio === dish.precio)
+          (i.nombre === dish.nombre && i.precio === dish.precio && i.opcion === option)
             ? { ...i, cantidad: i.cantidad + 1 }
             : i
         );
       }
-      return [...prev, { nombre: dish.nombre, precio: dish.precio, cantidad: 1 }];
+      return [...prev, { nombre: dish.nombre, precio: dish.precio, cantidad: 1, opcion: option }];
     });
   };
 
-  const updateQuantity = (nombre: string, precio: string, delta: number) => {
+  const handleAddToCartClick = (dish: Dish, categoryName: string) => {
+    const config = getDishModalConfig(dish.nombre, categoryName);
+    if (config) {
+      setOptionsModal({
+        dish,
+        showRice: config.showRice,
+        showDrink: config.showDrink,
+        showCremas: config.showCremas,
+        selectedRice: 'Arroz Blanco',
+        selectedDrink: config.drinkOptions.length > 0 ? config.drinkOptions[0] : '',
+        selectedCremas: [],
+        drinkOptions: config.drinkOptions,
+        drinkTitle: config.drinkTitle
+      });
+    } else {
+      addToCart(dish);
+    }
+  };
+
+  const updateQuantity = (nombre: string, precio: string, delta: number, option?: string) => {
     setCart(prev =>
       prev
         .map(i => {
-          if (i.nombre === nombre && i.precio === precio) {
+          if (i.nombre === nombre && i.precio === precio && i.opcion === option) {
             const newQty = i.cantidad + delta;
             return newQty > 0 ? { ...i, cantidad: newQty } : null;
           }
@@ -186,8 +266,7 @@ export default function App() {
 
   const calculateTotal = () => {
     return cart.reduce((acc, item) => {
-      const cleanPrice = item.precio.replace(/^[^\d]*/, '');
-      const num = parseFloat(cleanPrice) || 0;
+      const num = parseFloat(item.precio) || 0;
       return acc + num * item.cantidad;
     }, 0);
   };
@@ -207,12 +286,14 @@ export default function App() {
     if (deliveryData.lat && deliveryData.lng) {
       message += `• *Ubicación GPS:* https://maps.google.com/?q=${deliveryData.lat},${deliveryData.lng}\n`;
     }
+    message += `• *Método de Pago:* ${deliveryData.metodoPago}\n`;
     message += `\n`;
 
     message += `*🛒 DETALLE DE LA COMPRA:*\n`;
     
     cart.forEach(item => {
-      message += `• *${item.cantidad}x* ${item.nombre} _(${item.precio})_\n`;
+      const optionText = item.opcion ? ` [${item.opcion}]` : '';
+      message += `• *${item.cantidad}x* ${item.nombre}${optionText} _(S/.${item.precio})_\n`;
     });
     
     message += `\n*💵 TOTAL A PAGAR:* *S/.${total.toFixed(2)}*\n\n`;
@@ -288,7 +369,7 @@ export default function App() {
   const handleBirthdaySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingBirthday(true);
-    const success = await submitSheetData('Cumpleaños', {
+    const success = await submitSheetData('Fidelización', {
       timestamp: new Date().toLocaleString('es-PE'),
       nombre: birthdayData.nombre,
       telefono: birthdayData.telefono,
@@ -491,18 +572,18 @@ export default function App() {
                       {dish.nombre}
                     </h4>
                     {dish.descripcion && (
-                      <p className="text-[10px] text-dark/50 leading-snug mb-3 line-clamp-3 font-description font-light">
+                      <p className="text-[10px] text-dark/50 leading-snug mb-3 font-description font-light">
                         {dish.descripcion}
                       </p>
                     )}
                     <div className="flex-1"></div>
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
                       <span className="font-title text-primary text-[16px] whitespace-nowrap">
-                        {dish.precio}
+                        S/.{dish.precio}
                       </span>
                       <motion.button
                         whileTap={{ scale: 0.8 }}
-                        onClick={() => addToCart(dish)}
+                        onClick={() => handleAddToCartClick(dish, cat.nombre)}
                         className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-colors duration-200 shrink-0"
                       >
                         <Plus size={16} strokeWidth={3} />
@@ -723,26 +804,31 @@ export default function App() {
               <div className="space-y-3 mb-8">
                 {cart.map(item => (
                   <div
-                    key={`${item.nombre}-${item.precio}`}
+                    key={`${item.nombre}-${item.precio}-${item.opcion || ''}`}
                     className="flex items-center gap-4 bg-gray-50 p-4 rounded-2.5xl border border-gray-100"
                   >
                     <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-dark text-sm truncate">{item.nombre}</h4>
-                      <p className="text-xs text-primary font-black mt-0.5">{item.precio}</p>
+                      {item.opcion && (
+                        <p className="text-[10px] text-secondary font-black tracking-wide uppercase mt-0.5">
+                          ✓ {item.opcion}
+                        </p>
+                      )}
+                      <p className="text-xs text-primary font-black mt-0.5">S/.{item.precio}</p>
                     </div>
                     
                     <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-2xl border border-gray-150">
-                      <button onClick={() => updateQuantity(item.nombre, item.precio, -1)} className="text-dark/40 hover:text-primary transition-colors">
+                      <button onClick={() => updateQuantity(item.nombre, item.precio, -1, item.opcion)} className="text-dark/40 hover:text-primary transition-colors">
                         <Minus size={14} />
                       </button>
                       <span className="font-title text-sm w-4 text-center leading-none mt-0.5">{item.cantidad}</span>
-                      <button onClick={() => updateQuantity(item.nombre, item.precio, 1)} className="text-primary hover:text-primary/80 transition-colors">
+                      <button onClick={() => updateQuantity(item.nombre, item.precio, 1, item.opcion)} className="text-primary hover:text-primary/80 transition-colors">
                         <Plus size={14} />
                       </button>
                     </div>
 
                     <button
-                      onClick={() => updateQuantity(item.nombre, item.precio, -item.cantidad)}
+                      onClick={() => updateQuantity(item.nombre, item.precio, -item.cantidad, item.opcion)}
                       className="text-primary/40 hover:text-primary ml-1 transition-colors"
                     >
                       <Trash2 size={18} />
@@ -1063,6 +1149,21 @@ export default function App() {
                   />
                 </div>
 
+                <div>
+                  <label className="text-[9px] font-black text-dark/40 uppercase ml-1">Método de Pago</label>
+                  <select
+                    required
+                    value={deliveryData.metodoPago}
+                    onChange={e => setDeliveryData({...deliveryData, metodoPago: e.target.value})}
+                    className="w-full bg-gray-50 border border-gray-150 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-primary/50 text-dark transition-colors"
+                  >
+                    <option value="">Selecciona tu método de pago</option>
+                    <option value="Yape / Plin">Yape / Plin</option>
+                    <option value="Tarjeta">Tarjeta</option>
+                    <option value="Efectivo">Efectivo</option>
+                  </select>
+                </div>
+
                 {/* SECCIÓN GEOLOCALIZACIÓN GPS (OPCIONAL) */}
                 <div className="pt-2">
                   {deliveryData.locationSuccess ? (
@@ -1125,6 +1226,171 @@ export default function App() {
                   Confirmar y Enviar a WhatsApp 🍗
                 </button>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL SELECCIÓN DE OPCIONES (ACOMPAÑAMIENTOS/SABORES/BEBIDAS) */}
+      <AnimatePresence>
+        {optionsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[75] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setOptionsModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white text-dark w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative border border-gray-100"
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setOptionsModal(null)}
+                className="absolute top-4 right-4 w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X size={16} className="text-dark/40" />
+              </button>
+
+              <div className="flex flex-col items-center text-center mb-4 mt-2">
+                <div className="w-14 h-14 bg-gradient-to-br from-primary to-orange-500 rounded-3xl flex items-center justify-center mb-3 shadow-lg shadow-primary/20">
+                  <Sparkles size={26} className="text-white animate-pulse" />
+                </div>
+                <h2 className="font-title text-xl text-dark leading-snug">{optionsModal.dish.nombre}</h2>
+                <p className="text-[9px] font-sans text-dark/40 font-black tracking-wider uppercase mt-1">Personaliza tu pedido</p>
+              </div>
+
+              <div className="space-y-4 max-h-[42vh] overflow-y-auto pr-1 mb-6 scrollbar-thin">
+                {/* 1. Rice Selector */}
+                {optionsModal.showRice && (
+                  <div>
+                    <h3 className="text-[10px] font-black text-primary tracking-wider uppercase mb-2 ml-1">
+                      Elige tu acompañamiento
+                    </h3>
+                    <div className="space-y-2">
+                      {['Arroz Blanco', 'Arroz Chaufa'].map(rice => {
+                        const isSelected = optionsModal.selectedRice === rice;
+                        return (
+                          <div
+                            key={rice}
+                            onClick={() => setOptionsModal({ ...optionsModal, selectedRice: rice })}
+                            className={`flex items-center justify-between p-3.5 rounded-2xl border-2 cursor-pointer transition-all
+                              ${isSelected 
+                                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                                : 'border-gray-150 bg-gray-50 text-dark/80 hover:border-gray-200'
+                              }`}
+                          >
+                            <span className="font-bold text-xs">{rice}</span>
+                            <div className={`w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center transition-all
+                              ${isSelected ? 'border-primary bg-primary' : 'border-gray-300 bg-white'}`}
+                            >
+                              {isSelected && <Check size={10} className="text-white font-bold" strokeWidth={4} />}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Drink Selector */}
+                {optionsModal.showDrink && (
+                  <div>
+                    <h3 className="text-[10px] font-black text-primary tracking-wider uppercase mb-2 ml-1">
+                      {optionsModal.drinkTitle}
+                    </h3>
+                    <div className="space-y-2">
+                      {optionsModal.drinkOptions.map(drink => {
+                        const isSelected = optionsModal.selectedDrink === drink;
+                        return (
+                          <div
+                            key={drink}
+                            onClick={() => setOptionsModal({ ...optionsModal, selectedDrink: drink })}
+                            className={`flex items-center justify-between p-3.5 rounded-2xl border-2 cursor-pointer transition-all
+                              ${isSelected 
+                                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                                : 'border-gray-150 bg-gray-50 text-dark/80 hover:border-gray-200'
+                              }`}
+                          >
+                            <span className="font-bold text-xs">{drink}</span>
+                            <div className={`w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center transition-all
+                              ${isSelected ? 'border-primary bg-primary' : 'border-gray-300 bg-white'}`}
+                            >
+                              {isSelected && <Check size={10} className="text-white font-bold" strokeWidth={4} />}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Cremas Selector */}
+                {optionsModal.showCremas && (
+                  <div>
+                    <h3 className="text-[10px] font-black text-primary tracking-wider uppercase mb-2 ml-1">
+                      ¿Qué cremas deseas agregar?
+                    </h3>
+                    <div className="space-y-2">
+                      {['Mayonesa', 'Ketchup', 'Ají'].map(crema => {
+                        const isSelected = optionsModal.selectedCremas.includes(crema);
+                        const handleToggle = () => {
+                          const current = optionsModal.selectedCremas;
+                          const next = current.includes(crema)
+                            ? current.filter(c => c !== crema)
+                            : [...current, crema];
+                          setOptionsModal({ ...optionsModal, selectedCremas: next });
+                        };
+                        return (
+                          <div
+                            key={crema}
+                            onClick={handleToggle}
+                            className={`flex items-center justify-between p-3.5 rounded-2xl border-2 cursor-pointer transition-all
+                              ${isSelected 
+                                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                                : 'border-gray-150 bg-gray-50 text-dark/80 hover:border-gray-200'
+                              }`}
+                          >
+                            <span className="font-bold text-xs">{crema}</span>
+                            <div className={`w-4.5 h-4.5 rounded-lg border-2 flex items-center justify-center transition-all
+                              ${isSelected ? 'border-primary bg-primary' : 'border-gray-300 bg-white'}`}
+                            >
+                              {isSelected && <Check size={10} className="text-white font-bold" strokeWidth={4} />}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => {
+                  const parts: string[] = [];
+                  if (optionsModal.showRice) {
+                    parts.push(optionsModal.selectedRice);
+                  }
+                  if (optionsModal.showDrink) {
+                    parts.push(optionsModal.selectedDrink);
+                  }
+                  if (optionsModal.showCremas) {
+                    const selectedCremas = optionsModal.selectedCremas;
+                    const cremasText = selectedCremas.length > 0
+                      ? `Cremas: ${selectedCremas.join(', ')}`
+                      : 'Sin cremas';
+                    parts.push(cremasText);
+                  }
+                  addToCart(optionsModal.dish, parts.join(' | '));
+                  setOptionsModal(null);
+                }}
+                className="w-full bg-primary hover:bg-primary/95 text-white py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-md shadow-primary/20 flex justify-center items-center gap-2 transition-all cursor-pointer"
+              >
+                Confirmar y Agregar (S/.{optionsModal.dish.precio})
+              </button>
             </motion.div>
           </motion.div>
         )}
